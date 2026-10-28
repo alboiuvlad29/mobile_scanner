@@ -54,6 +54,9 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
 
 #if os(iOS)
     var interfaceOrientationObserver: NSObjectProtocol?
+
+    var rotationCoordinator: NSObject?
+    var rotationObservation: NSKeyValueObservation?
 #endif
 
     /// Observer for the notification that the app is about to terminate.
@@ -552,8 +555,12 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
         captureSession!.commitConfiguration()
 
 #if os(iOS)
-        // Set up observer to update video orientation when interface orientation changes
-        setupInterfaceOrientationObserver()
+        if #available(iOS 17.0, *), let previewLayer = flutterViewLayer() {
+            followRotationCoordinator(device: device, previewLayer: previewLayer, videoOutput: videoOutput)
+        } else {
+            // Set up observer to update video orientation when interface orientation changes
+            setupInterfaceOrientationObserver()
+        }
 #endif
 
         DispatchQueue.global(qos: .background).async {
@@ -814,6 +821,31 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
             NotificationCenter.default.removeObserver(observer)
             interfaceOrientationObserver = nil
         }
+        rotationObservation?.invalidate()
+        rotationObservation = nil
+        rotationCoordinator = nil
+    }
+
+    /// Rotate the video output to match the Flutter view, as reported by the rotation coordinator.
+    @available(iOS 17.0, *)
+    private func followRotationCoordinator(device: AVCaptureDevice, previewLayer: CALayer, videoOutput: AVCaptureVideoDataOutput) {
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
+        rotationCoordinator = coordinator
+        rotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.initial, .new]) { [weak videoOutput] coordinator, _ in
+            let angle = coordinator.videoRotationAngleForHorizonLevelPreview
+            for connection in videoOutput?.connections ?? [] where connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+        }
+    }
+
+    /// The layer of the key window's root view, which hosts the Flutter view.
+    private func flutterViewLayer() -> CALayer? {
+        return UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?
+            .rootViewController?.view.layer
     }
 
     /// Update video orientation to match current interface orientation
