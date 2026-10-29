@@ -598,6 +598,12 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
 #else
                 let size = ["width": Double(dimensions.width), "height": Double(dimensions.height)]
 #endif
+
+#if os(iOS)
+                let initialDeviceOrientation = self.rotationOrientation ?? deviceVideoOrientation.toOrientationString
+#else
+                let initialDeviceOrientation = deviceVideoOrientation.toOrientationString
+#endif
                 // Return the result on the main thread after the session starts.
                 let answer: [String : Any?]
 
@@ -614,7 +620,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
                         "size": size,
                         "currentTorchState": device.hasTorch ? device.torchMode.rawValue : -1,
                         "cameraDirection": cameraDirection,
-                        "initialDeviceOrientation": self.rotationOrientation ?? deviceVideoOrientation.toOrientationString
+                        "initialDeviceOrientation": initialDeviceOrientation
                     ]
                 } else {
                     answer = [
