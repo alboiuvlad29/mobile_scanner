@@ -15,6 +15,16 @@ class DeviceOrientationStreamHandler: NSObject, FlutterStreamHandler {
     private var orientationObserver: NSObjectProtocol?
     private var lastSentOrientation: UIInterfaceOrientation?
     private var lastSentDeviceOrientation: UIDeviceOrientation?
+    private var orientationOverride: String?
+    private var lastSentOrientationOverride: String?
+
+    /// Report `orientation` instead of the interface orientation, or go back to it when `nil`.
+    func overrideOrientation(_ orientation: String?) {
+        orientationOverride = orientation
+        lastSentOrientation = nil
+        lastSentOrientationOverride = nil
+        sendCurrentOrientation()
+    }
 
     func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         self.eventSink = events
@@ -42,11 +52,20 @@ class DeviceOrientationStreamHandler: NSObject, FlutterStreamHandler {
         eventSink = nil
         lastSentOrientation = nil
         lastSentDeviceOrientation = nil
+        lastSentOrientationOverride = nil
         return nil
     }
 
     private func sendCurrentOrientation() {
         guard let sink = eventSink else { return }
+
+        if let orientationOverride = orientationOverride {
+            if lastSentOrientationOverride != orientationOverride {
+                lastSentOrientationOverride = orientationOverride
+                sink(orientationOverride)
+            }
+            return
+        }
 
         // Use interface orientation instead of device orientation
         // This respects Flutter's setPreferredOrientations

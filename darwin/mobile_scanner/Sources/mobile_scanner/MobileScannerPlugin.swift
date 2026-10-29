@@ -57,6 +57,8 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
 
     var rotationCoordinator: NSObject?
     var rotationObservation: NSKeyValueObservation?
+    var rotationOrientation: String?
+    var orientationStreamHandler: DeviceOrientationStreamHandler?
 #endif
 
     /// Observer for the notification that the app is about to terminate.
@@ -104,7 +106,9 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
 #if os(iOS)
         let orientationEvent = FlutterEventChannel(name:
                                             "dev.steenbakker.mobile_scanner/scanner/deviceOrientation", binaryMessenger: messenger)
-        orientationEvent.setStreamHandler(DeviceOrientationStreamHandler())
+        let orientationStreamHandler = DeviceOrientationStreamHandler()
+        orientationEvent.setStreamHandler(orientationStreamHandler)
+        instance.orientationStreamHandler = orientationStreamHandler
 #endif
     }
     
@@ -610,7 +614,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
                         "size": size,
                         "currentTorchState": device.hasTorch ? device.torchMode.rawValue : -1,
                         "cameraDirection": cameraDirection,
-                        "initialDeviceOrientation": deviceVideoOrientation.toOrientationString
+                        "initialDeviceOrientation": self.rotationOrientation ?? deviceVideoOrientation.toOrientationString
                     ]
                 } else {
                     answer = [
@@ -824,6 +828,8 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
         rotationObservation?.invalidate()
         rotationObservation = nil
         rotationCoordinator = nil
+        rotationOrientation = nil
+        orientationStreamHandler?.overrideOrientation(nil)
     }
 
     /// Rotate the video output to match the Flutter view, as reported by the rotation coordinator.
@@ -831,11 +837,28 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler,
     private func followRotationCoordinator(device: AVCaptureDevice, previewLayer: CALayer, videoOutput: AVCaptureVideoDataOutput) {
         let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
         rotationCoordinator = coordinator
-        rotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.initial, .new]) { [weak videoOutput] coordinator, _ in
+        rotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.initial, .new]) { [weak self, weak videoOutput] coordinator, _ in
             let angle = coordinator.videoRotationAngleForHorizonLevelPreview
             for connection in videoOutput?.connections ?? [] where connection.isVideoRotationAngleSupported(angle) {
                 connection.videoRotationAngle = angle
             }
+            let orientation = MobileScannerPlugin.orientationString(forVideoRotationAngle: angle)
+            self?.rotationOrientation = orientation
+            self?.orientationStreamHandler?.overrideOrientation(orientation)
+        }
+    }
+
+    /// The orientation of video rotated by `angle`, so that the preview is sized for the frames it receives.
+    private static func orientationString(forVideoRotationAngle angle: CGFloat) -> String {
+        switch (Int((angle / 90).rounded()) % 4 + 4) % 4 {
+        case 1:
+            return "PORTRAIT_UP"
+        case 2:
+            return "LANDSCAPE_LEFT"
+        case 3:
+            return "PORTRAIT_DOWN"
+        default:
+            return "LANDSCAPE_RIGHT"
         }
     }
 
